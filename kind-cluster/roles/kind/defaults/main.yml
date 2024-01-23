@@ -1,0 +1,5 @@
+# code: language=ansible
+---
+kind_version: "v0.17.0"
+# linux, darwin or windows
+kind_os: "linux"

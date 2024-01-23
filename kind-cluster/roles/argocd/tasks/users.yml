@@ -1,0 +1,15 @@
+# code: language=ansible
+---
+- name: "Set new argocd admin password"
+  kubernetes.core.k8s_json_patch:
+    kind: secret
+    name: argocd-secret
+    namespace: "{{ argocd_k8s_namespace }}"
+    version: v1
+    patch:
+      - op: replace
+        path: /data/admin.password
+        value: "{{ argocd_new_admin_password | password_hash('bcrypt') | b64encode }}"
+      - op: replace
+        path: /data/admin.passwordMtime
+        value: "{{ '%FT%T%Z' | strftime() | b64encode }}"

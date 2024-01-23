@@ -1,0 +1,6 @@
+ansible >= 2.10.8
+ansible-lint >= 5.4.0
+kubernetes >= 25.3.0
+docker >= 7.0.0
+passlib >= 1.7.4
+bcrypt >= 4.1.2

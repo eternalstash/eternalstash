@@ -1,0 +1,17 @@
+# code: language=ansible
+---
+
+- name: "Kind-cluster with ArgoCD"
+  hosts: localhost
+  gather_facts: true
+  connection: local
+  vars:
+    state: "present"
+  tasks:
+    - name: "Install or Destroy Kind"
+      ansible.builtin.import_role:
+        name: "kind"
+    - name: "Install ArgoCD"
+      ansible.builtin.import_role:
+        name: "argocd"
+      when: state == "present"

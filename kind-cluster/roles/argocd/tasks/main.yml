@@ -1,0 +1,45 @@
+# code: language=ansible
+---
+- name: Create Argocd Namespace
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ argocd_k8s_namespace }}"
+    state: "present"
+  run_once: true
+
+- name: "ArgoCD workflow"
+  run_once: true
+  block:
+    - name: Download ArgoCD manifests
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+        dest: /tmp/argocd_install.yaml
+        mode: 0440
+
+    - name: Apply manifests to cluster
+      kubernetes.core.k8s:
+        namespace: "{{ argocd_k8s_namespace }}"
+        src: /tmp/argocd_install.yaml
+        state: "present"
+  always:
+    - name: Cleanup installation
+      ansible.builtin.file:
+        path: /tmp/argocd_install.yaml
+        state: absent
+
+- name: Wait for argocd to be ready
+  kubernetes.core.k8s:
+    wait: true
+    wait_sleep: 5
+    wait_condition:
+      type: Available
+      status: "True"
+    namespace: "{{ argocd_k8s_namespace }}"
+    kind: Deployment
+    name: argocd-server
+    version: apps/v1
+  retries: 60
+
+- name: Manage admin user
+  ansible.builtin.import_tasks: users.yml

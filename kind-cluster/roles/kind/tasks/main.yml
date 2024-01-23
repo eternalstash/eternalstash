@@ -1,0 +1,24 @@
+# code: language=ansible
+---
+- name: "Download kind binary"
+  ansible.builtin.get_url:
+    url: https://kind.sigs.k8s.io/dl/{{ kind_version }}/kind-{{ kind_os }}-amd64
+    dest: ~/.local/bin/kind
+    mode: 0755
+
+- name: "Check if already exists"
+  community.docker.docker_container_info:
+    name: "demo-control-plane"
+  register: cluster_check_result
+
+- name: "Install kind"
+  when: state == "present" and not cluster_check_result.exists
+  block:
+    - name: "Create kind cluster"
+      ansible.builtin.command:
+        cmd: "kind create cluster -n demo"
+
+- name: "Destroy kind cluster"
+  ansible.builtin.command:
+    cmd: "kind delete cluster -n demo"
+  when: state == "absent"

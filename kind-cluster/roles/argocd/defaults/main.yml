@@ -1,0 +1,10 @@
+---
+
+argocd_action: present
+argocd_k8s_namespace: argocd
+argocd_admin_name: admin
+argocd_new_admin_password: demo
+# CLI
+argocd_cli_version: 2.6.0-rc4
+argocd_cli_url : "https://github.com/argoproj/argo-cd/releases/download/v{{ argocd_cli_version }}/argocd-linux-amd64"
+argocd_cli_path: ~/.local/bin/argocd
