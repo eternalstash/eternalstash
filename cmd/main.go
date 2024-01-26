@@ -1,11 +1,17 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -14,6 +20,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 )
+
+var coll *mongo.Collection
 
 func main() {
 	clientset := getKubernetesClient()
@@ -24,6 +32,7 @@ func main() {
 		AddFunc: func(obj interface{}) {
 			pod := obj.(*corev1.Pod)
 			printPodInfo("ADDED", pod)
+			savePodInfo("ADDED", pod)
 		},
 		DeleteFunc: func(obj interface{}) {
 			pod, ok := obj.(*corev1.Pod)
@@ -40,8 +49,31 @@ func main() {
 				}
 			}
 			printPodInfo("DELETED", pod)
+			savePodInfo("DELETED", pod)
 		},
 	})
+
+	// Connect to mongoDB
+	// if err := godotenv.Load(); err != nil {
+	// 	log.Println("No .env file found")
+	// }
+	// uri := os.Getenv("MONGODB_URI")
+	// if uri == "" {
+	// 	log.Fatal("You must set your 'MONGODB_URI' environment variable. See\n\t https://www.mongodb.com/docs/drivers/go/current/usage-examples/#environment-variable")
+	// }
+	uri := "mongodb://localhost:27017"
+	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
+	if err != nil {
+		panic(err)
+	}
+
+	defer func() {
+		if err := client.Disconnect(context.TODO()); err != nil {
+			panic(err)
+		}
+	}()
+
+	coll = client.Database("eternalstash").Collection("images")
 
 	// Start the informer to begin watching for Pod events
 	stopCh := make(chan struct{})
@@ -55,8 +87,13 @@ func main() {
 		return
 	}
 
+	router := gin.Default()
+	router.GET("/images", getImages)
+
+	router.Run("localhost:8080")
+
 	// Wait forever to keep the program running
-	select {}
+	// select {}
 }
 
 func getKubernetesClient() *kubernetes.Clientset {
@@ -77,6 +114,16 @@ func getKubernetesClient() *kubernetes.Clientset {
 	return clientset
 }
 
+type Image struct {
+	Pod       string `json:"pod"`
+	Container string `json:"container"`
+	Image     string `json:"image"`
+	ImageID   string `json:"imageId"`
+	Namespace string `json:"namespace"`
+	StartedAt string `json:"startedAt"`
+	DeletedAt string `json:"deletedAt"`
+}
+
 func printPodInfo(eventType string, pod *corev1.Pod) {
 	if pod == nil {
 		fmt.Println("Received nil pod object.")
@@ -94,6 +141,48 @@ func printPodInfo(eventType string, pod *corev1.Pod) {
 	} else if eventType == "DELETED" {
 		fmt.Printf("  StartAt: %s, Deleted At: %s \n", pod.Status.StartTime.Format(time.RFC3339), time.Now().Format(time.RFC3339))
 	}
+}
+
+func savePodInfo(eventType string, pod *corev1.Pod) {
+	if pod == nil {
+		fmt.Println("Received nil pod object.")
+		return
+	}
+	for _, containerStatus := range pod.Status.ContainerStatuses {
+		deletedAt := ""
+		if eventType == "DELETED" {
+			deletedAt = time.Now().Format(time.RFC3339)
+		}
+		image := Image{
+			Pod:       pod.Name,
+			Namespace: pod.Namespace,
+			Container: containerStatus.Name,
+			Image:     containerStatus.Image,
+			ImageID:   containerStatus.ImageID,
+			StartedAt: pod.Status.StartTime.Format(time.RFC3339),
+			DeletedAt: deletedAt,
+		}
+		result, err := coll.InsertOne(context.TODO(), image)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("Saved result %v\n", &result.InsertedID)
+	}
+}
+
+func getImages(c *gin.Context) {
+	cursor, err := coll.Find(context.TODO(), bson.D{})
+	if err != nil {
+		panic(err)
+	}
+	// end find
+
+	var results []Image
+	if err = cursor.All(context.TODO(), &results); err != nil {
+		panic(err)
+	}
+
+	c.IndentedJSON(http.StatusOK, results)
 }
 
 func getKubeconfigPath() string {
